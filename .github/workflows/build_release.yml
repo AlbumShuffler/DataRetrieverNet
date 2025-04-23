@@ -7,20 +7,20 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # You can change this to windows-latest or macos-latest based on your needs
+    runs-on: ubuntu-latest  # This will be overridden by the matrix strategy
 
     strategy:
       matrix:
-        os: [win-x64, linux-x64, linux-arm64, osx-x64, osx-arm64]  # Matrix to build on all 3 platforms
+        os: [win-x64, linux-x64, linux-arm64, osx-x64, osx-arm64]  # Define OS/Arch targets
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Set up .NET
+      - name: Set up .NET 8.0
         uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: '8.0'  # Change this to the version of .NET you're using
+          dotnet-version: '8.0'  # .NET 8.0 version
 
       - name: Restore dependencies
         run: dotnet restore
@@ -36,6 +36,12 @@ jobs:
         run: |
           cd ./publish/${{ matrix.os }}
           tar -czvf ../${{ matrix.os }}.tar.gz .
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: publish-${{ matrix.os }}
+          path: publish/${{ matrix.os }}.tar.gz  # Upload the .tar.gz file for this platform
 
   release:
     needs: build
@@ -46,15 +52,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
+      - name: Download build artifacts (Windows)
+        uses: actions/download-artifact@v3
+        with:
+          name: publish-win-x64  # Download the Windows artifact
+          
+      - name: Download build artifacts (Linux x64)
+        uses: actions/download-artifact@v3
+        with:
+          name: publish-linux-x64  # Download the Linux x64 artifact
+          
+      - name: Download build artifacts (Linux ARM64)
+        uses: actions/download-artifact@v3
+        with:
+          name: publish-linux-arm64  # Download the Linux ARM64 artifact
+          
+      - name: Download build artifacts (macOS x64)
+        uses: actions/download-artifact@v3
+        with:
+          name: publish-osx-x64  # Download the macOS x64 artifact
+          
+      - name: Download build artifacts (macOS ARM64)
+        uses: actions/download-artifact@v3
+        with:
+          name: publish-osx-arm64  # Download the macOS ARM64 artifact
+
       - name: Create a GitHub release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            publish/win-x64.tar.gz
-            publish/linux-x64.tar.gz
-            publish/linux-arm64.tar.gz
-            publish/osx-x64.tar.gz 
-            publish/osx-arm64.tar.gz 
+            publish-win-x64.tar.gz
+            publish-linux-x64.tar.gz
+            publish-linux-arm64.tar.gz
+            publish-osx-x64.tar.gz
+            publish-osx-arm64.tar.gz  # Add all 5 platforms' files here
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
