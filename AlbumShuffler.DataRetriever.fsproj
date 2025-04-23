@@ -7,13 +7,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="Program.fs"/>
-        <Content Include="input\source.json">
-          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </Content>
-    </ItemGroup>
-
-    <ItemGroup>
       <PackageReference Include="FSharp.SystemTextJson" Version="1.3.13" />
       <PackageReference Include="FsToolkit.ErrorHandling" Version="4.18.0" />
       <PackageReference Include="FsToolkit.ErrorHandling.TaskResult" Version="4.18.0" />
