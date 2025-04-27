@@ -1,4 +1,4 @@
-﻿open System.Text.Json.Serialization.Skippable
+﻿open System
 open FsToolkit.ErrorHandling
 
 open System.IO
@@ -348,8 +348,9 @@ let saveAllOutputs (basedir: string) (outputs: Output list) =
 let main args =
     let operation =
         taskResult {
+            do printf "Trying to get cli arguments"
             let! config = args |> parseCommandLineArgs
-            do printfn "Read config from cli arguments"
+            do printfn " ... OK"
             
             do printf "Trying to read input file"
             let! rawJson = config.InputFilePath |> readFileContent
@@ -370,7 +371,7 @@ let main args =
                        
             return 0
         } |> TaskResult.defaultWith (fun error ->
-            do printfn $"%s{error}"
+            do printfn $" ... FAILED%s{Environment.NewLine}%s{error}"
             1)
 
     operation.GetAwaiter().GetResult()
