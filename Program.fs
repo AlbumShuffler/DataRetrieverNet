@@ -2,6 +2,7 @@
 open FsToolkit.ErrorHandling
 
 open System.IO
+open System.Linq
 open System.Text.Json
 open System.Text.Json.Serialization
 open System.Threading.Tasks
@@ -343,6 +344,20 @@ let saveAllOutputs (basedir: string) (outputs: Output list) =
     do outputs |> List.iter save
     do printfn "Finished writing all data"
         
+        
+let runTasksInSequence (tasks: Task<Result<Output, string>> list) =
+    task {
+        let results = System.Collections.Generic.List<Output>()
+        let errors = System.Collections.Generic.List<string>()
+        for task in tasks do
+            match! task with
+            | Ok output -> results.Add(output)
+            | Error err -> errors.Add(err)
+            
+        if errors.Any() then return Error (String.Join(Environment.NewLine, errors))
+        else return Ok (results |> List.ofSeq)
+    }
+        
 
 [<EntryPoint>]
 let main args =
@@ -364,7 +379,7 @@ let main args =
             let! client = createSpotifyClient config.ClientId config.ClientSecret
             do printfn " ... OK"
             
-            let! outputs = source |> List.map (retrieveDataForInput client) |> List.sequenceTaskResultM
+            let! outputs = source |> List.map (retrieveDataForInput client) |> runTasksInSequence
             do printfn "Finished downloading all data"
             
             do outputs |> saveAllOutputs config.OutputPath
