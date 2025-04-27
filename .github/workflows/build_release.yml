@@ -86,11 +86,11 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            publish-win-x64.tar.gz
-            publish-linux-x64.tar.gz
-            publish-linux-arm64.tar.gz
-            publish-osx-x64.tar.gz
-            publish-osx-arm64.tar.gz  # Add all 5 platforms' files here
+            win-x64.tar.gz
+            linux-x64.tar.gz
+            linux-arm64.tar.gz
+            osx-x64.tar.gz
+            osx-arm64.tar.gz
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
