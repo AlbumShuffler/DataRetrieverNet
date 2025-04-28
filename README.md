@@ -1,6 +1,8 @@
 # Album Shuffler
 This repository contains a self-contained dotnet application to automatically retrieve data from the Spotify API and save it as local JSON files.
 
+Using this tool does not require the dotnet sdk or runtime! Download the latest release (pre-built for Linux, Mac & Windows) and run it. The downloads contain self-contained binaries meaning they do not have any external dependencies.
+
 ## Usage
 
 ### Spotify Access
