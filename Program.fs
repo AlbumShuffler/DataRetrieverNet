@@ -92,6 +92,8 @@ let jsonSerializerOptions =
                 .WithSkippableOptionFields()
                 .WithAllowNullFields()
                 .ToJsonSerializerOptions()
+        do options.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
+        do options.WriteIndented <- true
         do options.PropertyNameCaseInsensitive <- true
         options
 
