@@ -6,6 +6,7 @@ open System.Linq
 open System.Text.Json
 open System.Text.Json.Serialization
 open System.Threading.Tasks
+open Spectre.Console
 open SpotifyAPI.Web
 
 type CommandLineArguments = {
@@ -41,7 +42,7 @@ type Image = {
 }
 
 /// <summary>
-/// Des
+/// Contains all metadata required to create elm code in a later step. Most of the fields are not used in this application
 /// </summary>
 type ArtistOutput = {
     ShortName: string
@@ -82,6 +83,9 @@ type Output = {
 let (|?|) = defaultArg
 
 
+/// <summary>
+/// This makes System.Text.Json ignore case when deserializing and make it interpret `null` as `None` for option types
+/// </summary>
 let jsonSerializerOptions =
         let options =
             JsonFSharpOptions.Default()
@@ -92,7 +96,33 @@ let jsonSerializerOptions =
         options
 
 
-let parseCommandLineArgs (args: string[]) =
+/// <summary>
+/// Runs the given action.
+/// If it encounters a `APITooManyRequestException` it will wait for the suggested time and try again.
+/// Will abort of 20 consecutive tries fail
+/// </summary>
+let performRateLimitAwareRequest<'a> (action: unit -> Task<'a>) : Task<Result<'a, string>> =
+    let maxRetryCount = 20
+    let rec step (counter: int) =
+        task {
+            if counter <= maxRetryCount then
+                try
+                    let! result = action ()
+                    return Ok result
+                with
+                | :? APITooManyRequestsException as rateLimitException ->
+                    do printfn $"Got a rate limit response from the api, suggest retry in %A{rateLimitException.RetryAfter.TotalSeconds} seconds"
+                    do! Task.Delay(rateLimitException.RetryAfter.Add(TimeSpan.FromSeconds(2)))
+                    return! step (counter + 1)
+                | exn ->
+                    return Error $"Spotify api request failed because: %s{exn.Message}"
+            else
+                return Error $"Could not get data from api. Rate limit exceeded the retry counter of %i{maxRetryCount}"
+        }
+    step 1
+
+
+let parseCommandLineArgs (args: string[]) : Result<CommandLineArguments, string> =
     match args with
     | [| clientId; clientSecret; inputFilePath; outputPath |] -> 
         Ok { 
@@ -124,7 +154,7 @@ let parseInput (json: string) : Result<Input list, string> =
         Error $"Failed to parse the input file: {ex.Message}"        
         
         
-let createSpotifyClient clientId clientSecret =
+let createSpotifyClient clientId clientSecret : TaskResult<SpotifyClient, string> =
     taskResult {
         try
             let config = SpotifyClientConfig.CreateDefault()
@@ -147,7 +177,7 @@ let filterAlbums (idsToIgnore: string list) (showsToIgnore: string list) (albums
 
 let getAlbumsForArtist (client: SpotifyClient) (artistId: string) =
     taskResult {
-        let! firstPageOfAlbums = artistId |> client.Artists.GetAlbums
+        let! firstPageOfAlbums = performRateLimitAwareRequest (fun () -> artistId |> client.Artists.GetAlbums)
         let! allAlbums = firstPageOfAlbums |> client.PaginateAll |> Task.map List.ofSeq
         return allAlbums
     }
@@ -235,15 +265,13 @@ let mapSimpleEpisodeToItemOutput (show: SimpleEpisode) : ItemOutput =
 
 let retrieveDataForArtist (client: SpotifyClient) (input: Input) : Task<Result<Output, string>> =
     taskResult {
-        let! artistDetails = input.Id |> client.Artists.Get
+        let! artistDetails = performRateLimitAwareRequest (fun () -> input.Id |> client.Artists.Get)
         let mappedArtist = artistDetails |> mapToArtistOutput input artistDetails.Images artistDetails.Name
-        
-        let! albums = input.Id |> getAlbumsForArtist client
-        let mappedAlbums =
-            albums
+        let! allAlbums = input.Id |> getAlbumsForArtist client
+        let filteredAlbums =
+            allAlbums
             |> List.map mapSimpleAlbumToItemOutput
             |> (filterAlbums (input.IgnoreIds |?| []) (input.IgnoreShowWithStrings |?| []))
-        let filteredAlbums = mappedAlbums |> filterAlbums (input.IgnoreIds |?| []) (input.IgnoreShowWithStrings |?| [])
         
         return {
             Albums = filteredAlbums
@@ -252,10 +280,10 @@ let retrieveDataForArtist (client: SpotifyClient) (input: Input) : Task<Result<O
     }
     
 let retrieveDataForPlaylist (client: SpotifyClient) (input: Input) : Task<Result<Output, string>> =
-    task {
+    taskResult {
         try
-            let! playlist = input.Id |> client.Playlists.Get
-            let! allTracks = client.PaginateAll(playlist.Tracks) |> Task.map List.ofSeq
+            let! playlist = performRateLimitAwareRequest (fun () -> input.Id |> client.Playlists.Get)
+            let! allTracks = performRateLimitAwareRequest (fun () -> client.PaginateAll(playlist.Tracks) |> Task.map List.ofSeq)
             let playlistTracks =
                     allTracks
                     |> List.map (fun element ->
@@ -269,12 +297,12 @@ let retrieveDataForPlaylist (client: SpotifyClient) (input: Input) : Task<Result
             let mappedAlbums = albums |> List.map mapSimpleAlbumToItemOutput
             let filteredAlbums = mappedAlbums |> filterAlbums (input.IgnoreIds |?| []) (input.IgnoreShowWithStrings |?| [])
             
-            return Ok {
+            return {
                 Artist = playlist |> mapToArtistOutput input playlist.Images playlist.Name
                 Albums = filteredAlbums
             }
         with ex ->
-            return Error $"Could not retrieve data for playlist {input.Id} because: {ex.Message}"
+            return! Error $"Could not retrieve data for playlist {input.Id} because: {ex.Message}"
     } 
     
     
@@ -283,20 +311,20 @@ let retrieveDataForShow (client: SpotifyClient) (input: Input) : Task<Result<Out
         try
             let! show = input.Id |> client.Shows.Get
             let! allEpisodes = client.PaginateAll(show.Episodes) |> Task.map List.ofSeq
-            
-            let mappedAlbums = allEpisodes |> List.map (fun episode ->
-                    {
-                        Id = episode.Id
-                        Name = episode.Name
-                        UrlToOpen = episode.ExternalUrls["spotify"]
-                        Images = episode.Images |> Seq.map mapSpotifyImageToImage |> List.ofSeq
-                    }
-                )
-            let filteredAlbums = mappedAlbums |> filterAlbums (input.IgnoreIds |?| []) (input.IgnoreShowWithStrings |?| [])
+            let filteredEpisodes =
+                    allEpisodes
+                    |> List.map (fun episode ->
+                        {
+                            Id = episode.Id
+                            Name = episode.Name
+                            UrlToOpen = episode.ExternalUrls["spotify"]
+                            Images = episode.Images |> Seq.map mapSpotifyImageToImage |> List.ofSeq
+                        })
+                    |> filterAlbums (input.IgnoreIds |?| []) (input.IgnoreShowWithStrings |?| [])
             
             return Ok {
                 Artist = show |> mapToArtistOutput input show.Images show.Name
-                Albums = filteredAlbums
+                Albums = filteredEpisodes
             }
         with ex ->
             return Error $"Could not retrieve data for show {input.Id} because: {ex.Message}"
@@ -357,6 +385,32 @@ let runTasksInSequence (tasks: Task<Result<Output, string>> list) =
         if errors.Any() then return Error (String.Join(Environment.NewLine, errors))
         else return Ok (results |> List.ofSeq)
     }
+    
+    
+let limitStringLength maxLength (input: string) : string =
+    let ellipsis = " [...]"
+    if input.Length <= maxLength then input
+    else input.Substring(0, maxLength - ellipsis.Length) + ellipsis
+    
+    
+let printStats (outputs: Output list) : unit =
+    let table = Table()
+    
+    do TableExtensions.Title(table, Environment.NewLine + "Overview of downloaded data", null) |> ignore
+    do table
+           .AddColumn("#")
+           .AddColumn("Id")
+           .AddColumn("Name")
+           .AddColumn("Count") |> ignore
+    // we clip the titles to make the table's total width be 80 characters
+    do outputs |> List.iteri (fun i output ->
+        table.AddRow(
+            Markup((i + 1) |> string),
+            Markup(output.Artist.Id),
+            Markup(Markup.Escape(output.Artist.Name |> limitStringLength 38)),
+            Markup(output.Albums.Length |> string)
+            ) |> ignore)
+    do AnsiConsole.Write(table)
         
 
 [<EntryPoint>]
@@ -379,8 +433,10 @@ let main args =
             let! client = createSpotifyClient config.ClientId config.ClientSecret
             do printfn " ... OK"
             
-            let! outputs = source |> List.map (retrieveDataForInput client) |> runTasksInSequence
+            let! outputs = source |> List.map (retrieveDataForInput client) |> List.sequenceTaskResultM
             do printfn "Finished downloading all data"
+            
+            do outputs |> printStats
             
             do outputs |> saveAllOutputs config.OutputPath
                        
