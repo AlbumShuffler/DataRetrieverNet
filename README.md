@@ -1,14 +1,17 @@
-# Album Shuffler
+# DEPRECATION NOTICE
+**This tool has been superseeded by the [Tools](https://github.com/AlbumShuffler/Tools) repository.**
+
+## Album Shuffler
 This repository contains a self-contained dotnet application to automatically retrieve data from the Spotify API and save it as local JSON files.
 
 Using this tool does not require the dotnet sdk or runtime! Download the latest release (pre-built for Linux, Mac & Windows) and run it. The downloads contain self-contained binaries meaning they do not have any external dependencies.
 
-## Usage
+### Usage
 
-### Spotify Access
+#### Spotify Access
 In order to retrieve data from the Spotify Web API you need a Spotify account. Go to [Spotify for Developers](https://developer.spotify.com/), login and create a new app. This will give you a `client_id` and a `client_secret`. These two values allow you to create an access token that needs to be send with every request to the api. This project does not need access to user or user profile data.
 
-### Input File
+#### Input File
 To tell the scripts what artists or playlists to download you need to supply an input file. It needs to be a JSON file in the following form:
 ```
 [
@@ -47,7 +50,7 @@ coverCenterX/Y: The covers are zoomed in by the web app; This tells the web app 
 coverColorA/B: The covers have light glow effect on the top right und bottom left corder
 ```
 
-### Update data
+#### Update data
 To generate new album data run the following command:
 ```
 ./AlbumShuffler.DataRetriever $SPOTIFY_CLIENT_ID $SPOTIFY_CLIENT_SECRET $INPUT_FILE $OUTPUT_DIR
